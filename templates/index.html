@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sentiment Analyser</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f0f2f5;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      padding: 24px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      padding: 40px;
+      width: 100%;
+      max-width: 560px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 28px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 8px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 130px;
+      padding: 12px 14px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 10px;
+      font-size: 15px;
+      color: #111827;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+
+    textarea:focus { border-color: #6366f1; }
+
+    .char-count {
+      text-align: right;
+      font-size: 12px;
+      color: #9ca3af;
+      margin-top: 4px;
+      margin-bottom: 18px;
+    }
+
+    button {
+      width: 100%;
+      padding: 13px;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+
+    button:hover  { background: #4f46e5; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .result {
+      margin-top: 24px;
+      padding: 20px;
+      border-radius: 12px;
+      display: none;
+      align-items: center;
+      gap: 16px;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+
+    .result.positive { background: #f0fdf4; border: 1.5px solid #86efac; }
+    .result.negative { background: #fef2f2; border: 1.5px solid #fca5a5; }
+
+    .emoji { font-size: 36px; line-height: 1; }
+
+    .result-text .label {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .result.positive .label { color: #15803d; }
+    .result.negative .label { color: #b91c1c; }
+
+    .result-text .conf {
+      font-size: 13px;
+      color: #6b7280;
+      margin-top: 2px;
+    }
+
+    .bar-wrap {
+      margin-top: 10px;
+      background: #e5e7eb;
+      border-radius: 99px;
+      height: 6px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      transition: width 0.5s ease;
+    }
+
+    .result.positive .bar-fill { background: #22c55e; }
+    .result.negative .bar-fill { background: #ef4444; }
+
+    .error {
+      margin-top: 16px;
+      padding: 12px 16px;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      color: #b91c1c;
+      font-size: 14px;
+      display: none;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Sentiment Analyser</h1>
+    <p class="subtitle">Paste any text — tweet, review, or sentence — to detect its sentiment.</p>
+
+    <label for="inputText">Your text</label>
+    <textarea id="inputText" placeholder="e.g. I absolutely loved this product!"></textarea>
+    <div class="char-count"><span id="charCount">0</span> characters</div>
+
+    <button id="analyseBtn" onclick="analyse()">Analyse</button>
+
+    <div class="result" id="result">
+      <div class="emoji" id="emoji"></div>
+      <div class="result-text">
+        <div class="label" id="label"></div>
+        <div class="conf" id="conf"></div>
+        <div class="bar-wrap"><div class="bar-fill" id="barFill"></div></div>
+      </div>
+    </div>
+
+    <div class="error" id="error"></div>
+  </div>
+
+  <script>
+    const textarea = document.getElementById('inputText');
+    const charCount = document.getElementById('charCount');
+    textarea.addEventListener('input', () => {
+      charCount.textContent = textarea.value.length;
+    });
+
+    async function analyse() {
+      const text = textarea.value.trim();
+      if (!text) { showError("Please enter some text first."); return; }
+
+      const btn = document.getElementById('analyseBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Analysing…';
+      hideError();
+      hideResult();
+
+      try {
+        const res = await fetch('/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        const data = await res.json();
+        showResult(data);
+      } catch (err) {
+        showError("Could not reach the server. Make sure the backend is running.");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Analyse';
+      }
+    }
+
+    function showResult({ label, confidence, emoji }) {
+      const resultEl = document.getElementById('result');
+      resultEl.className = 'result ' + label.toLowerCase();
+      resultEl.style.display = 'flex';
+      document.getElementById('emoji').textContent = emoji;
+      document.getElementById('label').textContent = label;
+      document.getElementById('conf').textContent = `Confidence: ${confidence}%`;
+      document.getElementById('barFill').style.width = confidence + '%';
+    }
+
+    function hideResult() { document.getElementById('result').style.display = 'none'; }
+    function showError(msg) { const e = document.getElementById('error'); e.textContent = msg; e.style.display = 'block'; }
+    function hideError()    { document.getElementById('error').style.display = 'none'; }
+
+    // Allow Ctrl+Enter to submit
+    textarea.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) analyse();
+    });
+  </script>
+</body>
+</html>
